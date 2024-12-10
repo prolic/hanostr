@@ -32,19 +32,28 @@ Rectangle {
                 anchors.fill: parent
                 clip: true
                 spacing: 5
+                property string selectedPubkey: ""
 
                 model: AutoListModel {
                     id: followsModel
-                    source: follows
+                    source: followList
                     mode: AutoListModel.ByKey
                     equalityTest: function (oldItem, newItem) {
-                        return oldItem.displayName === newItem.displayName
-                            && oldItem.name === newItem.name
-                            && oldItem.petname === newItem.petname
+                        return oldItem.pubkey === newItem.pubkey
                             && oldItem.relay === newItem.relay
+                            && oldItem.petname === newItem.petname
+                            && oldItem.displayName === newItem.displayName
+                            && oldItem.name === newItem.name
                             && oldItem.picture === newItem.picture
                     }
                 }
+
+                highlightRangeMode: ListView.ApplyRange
+                highlightMoveDuration: 0
+                cacheBuffer: height * 0.5
+                displayMarginBeginning: height * 0.5
+                displayMarginEnd: height * 0.5
+                reuseItems: true
 
                 ScrollBar.vertical: ScrollBar {
                     active: true
@@ -57,12 +66,18 @@ Rectangle {
                     height: visible ? 80 : 0
                     width: followsView.width - followsView.ScrollBar.vertical.width
                     visible: {
+                        if (!modelData) return false;
                         if (followListFilter.filterText === "") return true;
                         var searchText = followListFilter.filterText.toLowerCase();
                         return modelData.pubkey.toLowerCase().includes(searchText) ||
                                 (modelData.displayName && modelData.displayName.toLowerCase().includes(searchText));
                     }
-                    color: mouseHover ? Material.accentColor : Material.backgroundColor
+                    color: {
+                        if (!modelData) return Material.backgroundColor;
+                        if (mouseHover) return Material.accentColor;
+                        if (modelData.pubkey === followsView.selectedPubkey) return Qt.darker(Material.accentColor, 1.2);
+                        return Material.backgroundColor;
+                    }
                     border.color: Material.dividerColor
                     radius: 5
 
@@ -110,18 +125,17 @@ Rectangle {
                         onExited: followItem.mouseHover = false
 
                         onClicked: {
+                            followsView.selectedPubkey = modelData.pubkey
                             setCurrentProfile(modelData.pubkey)
                             openChat(modelData.pubkey)
                             profileLoader.setSource("Profile/Profile.ui.qml", {
                                 "profileData": currentProfile,
                                 "npub": modelData.pubkey
                             })
-                            if (ctxRelayMgmt.dmRelays.length > 0) {
-                                chatLoader.setSource("Chat.ui.qml", {
-                                    "profileData": currentProfile,
-                                    "npub": modelData.pubkey
-                                })
-                            }
+                            chatLoader.setSource("MainContent.ui.qml", {
+                                "profileData": currentProfile,
+                                "npub": modelData.pubkey
+                            })
                         }
                     }
                 }

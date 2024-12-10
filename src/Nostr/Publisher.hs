@@ -13,7 +13,7 @@ import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
 --import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
 
-import EffectfulQML
+import QtQuick
 import Logging
 import Nostr.Bech32 (pubKeyXOToBech32)
 import Nostr.Keys (PubKeyXO, keyPairToPubKeyXO)
@@ -49,7 +49,7 @@ type PublisherEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
   , RelayConnection :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , Concurrent :> es
   , Logging :> es
   , Util :> es

@@ -34,7 +34,7 @@ import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.Random (randomRIO)
 
-import EffectfulQML
+import QtQuick
 import Logging
 import Nostr
 import Nostr.Bech32
@@ -44,6 +44,7 @@ import Nostr.Types hiding (displayName, picture)
 import System.FilePath (takeFileName, (</>))
 import Text.Read (readMaybe)
 import qualified Nostr.Types as NT
+import Types (AppState(..))
 
 
 -- | Account.
@@ -87,10 +88,11 @@ initialState =
 
 -- | Key Management Effect.
 type KeyMgmtEff es = ( State KeyMgmtState :> es
+                     , State AppState :> es
                      , Nostr :> es
                      , FileSystem :> es
                      , IOE :> es
-                     , EffectfulQML :> es
+                     , QtQuick :> es
                      , Logging :> es )
 
 -- | Key Management Effects.
@@ -217,6 +219,7 @@ runKeyMgmt = interpret $ \_ -> \case
       Nothing -> do
         logError $ "Account not found: " <> accountId aid
         return ()
+
 
 -- | Load all accounts from the Nostr data directory.
 loadAccounts :: (FileSystem :> es, State KeyMgmtState :> es, IOE :> es) => Eff es ()

@@ -1,0 +1,8 @@
+module Components
+FutrInput 1.0 FutrInput.ui.qml
+FutrCard 1.0 FutrCard.ui.qml
+MessageInput 1.0 MessageInput.ui.qml
+PostContent 1.0 PostContent.ui.qml
+PostDelegate 1.0 PostDelegate.ui.qml
+ProfilePicture 1.0 ProfilePicture.ui.qml
+RelayStatusIcon 1.0 RelayStatusIcon.ui.qml

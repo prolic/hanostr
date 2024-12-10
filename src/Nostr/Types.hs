@@ -138,12 +138,14 @@ data Kind
   | EventDeletion           -- NIP-09 (kind 5)
   | Repost                  -- NIP-18 (kind 6)
   | Reaction                -- NIP-25 (kind 7)
+  | GenericRepost           -- NIP-18 (kind 16)
   | Seal                    -- NIP-59 (kind 13)
   | GiftWrap                -- NIP-59 (kind 1059)
   | DirectMessage           -- NIP-17 (kind 14)
   | PreferredDMRelays       -- NIP-17 (kind 10050)
   | CanonicalAuthentication -- NIP-42 (kind 22242)
   | RelayListMetadata       -- NIP-65 (kind 10002)
+  | Comment                 -- NIP-22 (kind 1111)
   | UnknownKind Int
   deriving (Eq, Generic, Read, Show)
 
@@ -153,7 +155,21 @@ newtype EventId = EventId { getEventId :: ByteString } deriving (Eq, Ord)
 
 
 -- | Represents a relationship type.
-data Relationship = Reply | Root
+data Relationship = Reply | Root | Mention
+  deriving (Eq, Generic, Show)
+
+
+-- | Represents different types of external content IDs as specified in NIP-73
+data ExternalId
+  = UrlId Text              -- ^ Normalized URL without fragment
+  | HashtagId Text          -- ^ Lowercase hashtag
+  | GeohashId Text          -- ^ Lowercase geohash
+  | IsbnId Text             -- ^ ISBN without hyphens
+  | PodcastGuidId Text      -- ^ Podcast GUID
+  | PodcastItemGuidId Text  -- ^ Podcast Episode GUID
+  | PodcastPublisherGuidId Text -- ^ Podcast Publisher GUID
+  | IsanId Text             -- ^ ISAN without version part
+  | DoiId Text              -- ^ Lowercase DOI
   deriving (Eq, Generic, Show)
 
 
@@ -161,8 +177,11 @@ data Relationship = Reply | Root
 data Tag
   = ETag EventId (Maybe RelayURI) (Maybe Relationship)
   | PTag PubKeyXO (Maybe RelayURI) (Maybe DisplayName)
+  | QTag EventId (Maybe RelayURI) (Maybe PubKeyXO)
+  | KTag Text
   | RelayTag Relay
   | ChallengeTag Text
+  | ITag ExternalId (Maybe Text)
   | GenericTag [Value]
   deriving (Eq, Generic, Show)
 
@@ -273,6 +292,13 @@ instance Show EventId where
   showsPrec _ = shows . B16.encode . getEventId
 
 
+-- | Reads an 'EventId' from its string representation.
+instance Read EventId where
+  readsPrec _ str = case decodeHex str of
+    Just bs | BS.length bs == 32 -> [(EventId bs, "")]
+    _ -> []
+
+
 -- | Converts a JSON string into an 'EventId'.
 instance FromJSON EventId where
   parseJSON = withText "EventId" $ \i -> do
@@ -359,6 +385,9 @@ instance FromJSON Tag where
     case V.toList arr of
       ("e":rest) -> either (const $ parseGenericTag v) return $ parseEither (parseETag rest) v
       ("p":rest) -> parsePTag rest v
+      ("q":rest) -> parseQTag rest v
+      ("i":rest) -> parseITag rest v
+      ("k":rest) -> parseKTag rest v
       ("relay":rest) -> parseRelayTag rest v
       ("challenge":rest) -> parseChallengeTag rest v
       _          -> parseGenericTag v
@@ -468,30 +497,47 @@ parseGenericTag v = fail $ "Expected array for generic tag, got: " ++ show v
 
 -- | Converts a 'Tag' to its JSON representation.
 instance ToJSON Tag where
-  toEncoding (ETag eventId relayURL marker) =
-    list id $
-      [ text "e"
-      , text $ decodeUtf8 $ B16.encode $ getEventId eventId
-      ] ++
-      (maybe [] (\r -> [text r]) relayURL) ++
-      (case marker of
-         Just Reply -> [text "reply"]
-         Just Root -> [text "root"]
-         Nothing -> [])
-  toEncoding (PTag xo relayURL name) =
-    list id $
-      [ text "p"
-      , toEncoding xo
-      ] ++
-      (maybe [] (\r -> [text r]) relayURL) ++
-      (maybe [] (\n -> [text n]) name)
-  toEncoding (RelayTag relay) = 
-    list id $ case relay of
-      InboxRelay uri -> [text "relay", text uri, text "read"]
-      OutboxRelay uri -> [text "relay", text uri, text "write"]
-      InboxOutboxRelay uri -> [text "relay", text uri]
-  toEncoding (ChallengeTag challenge) = list id [text "challenge", text challenge]
-  toEncoding (GenericTag values) = list toEncoding values
+  toEncoding tag = case tag of
+    ETag eventId relayURL marker ->
+      list id $
+        [ text "e"
+        , text $ decodeUtf8 $ B16.encode $ getEventId eventId
+        ] ++
+        (maybe [] (\r -> [text r]) relayURL) ++
+        (case marker of
+           Just Reply -> [text "reply"]
+           Just Root -> [text "root"]
+           Just Mention -> [text "mention"]
+           Nothing -> [])
+    PTag xo relayURL name ->
+      list id $
+        [ text "p"
+        , toEncoding xo
+        ] ++
+        (maybe [] (\r -> [text r]) relayURL) ++
+        (maybe [] (\n -> [text n]) name)
+    QTag eventId relayURL pubkey ->
+      list id $
+        [ text "q"
+        , text $ decodeUtf8 $ B16.encode $ getEventId eventId
+        ] ++
+        (maybe [] (\r -> [text r]) relayURL) ++
+        (maybe [] (\pk -> [text $ decodeUtf8 $ B16.encode $ exportPubKeyXO pk]) pubkey)
+    ITag eid urlHint ->
+      list id $
+        [ text "i"
+        , text (externalIdToText eid)
+        ] ++
+        maybe [] (\url -> [text url]) urlHint
+    KTag kind ->
+      list id [ text "k", text kind ]
+    RelayTag relay -> 
+      list id $ case relay of
+        InboxRelay uri -> [text "relay", text uri, text "read"]
+        OutboxRelay uri -> [text "relay", text uri, text "write"]
+        InboxOutboxRelay uri -> [text "relay", text uri]
+    ChallengeTag challenge -> list id [text "challenge", text challenge]
+    GenericTag values -> list toEncoding values
 
 
 -- | Converts a JSON string into a 'Relationship'.
@@ -500,6 +546,7 @@ instance FromJSON Relationship where
    case T.toLower m of
      "reply" -> return Reply
      "root"  -> return Root
+     "mention" -> return Mention
      _       -> mzero
 
 
@@ -507,7 +554,7 @@ instance FromJSON Relationship where
 instance ToJSON Relationship where
   toEncoding Reply = text "reply"
   toEncoding Root = text "root"
-
+  toEncoding Mention = text "mention"
 
 -- | Converts a JSON array into a 'Response'.
 instance FromJSON Response where
@@ -565,12 +612,14 @@ instance FromJSON Kind where
       5  -> return EventDeletion
       6  -> return Repost
       7  -> return Reaction
+      16 -> return GenericRepost
       13 -> return Seal
       1059 -> return GiftWrap
       14 -> return DirectMessage
       10050 -> return PreferredDMRelays
       22242 -> return CanonicalAuthentication
       10002 -> return RelayListMetadata
+      1111 -> return Comment
       _  -> return $ UnknownKind n
     Nothing -> fail "Expected an integer for Kind"
 
@@ -583,6 +632,7 @@ instance ToJSON Kind where
   toEncoding FollowList    = toEncoding (3 :: Int)
   toEncoding EventDeletion = toEncoding (5 :: Int)
   toEncoding Repost        = toEncoding (6 :: Int)
+  toEncoding GenericRepost = toEncoding (16 :: Int)
   toEncoding Reaction      = toEncoding (7 :: Int)
   toEncoding Seal          = toEncoding (13 :: Int)
   toEncoding GiftWrap      = toEncoding (1059 :: Int)
@@ -590,6 +640,7 @@ instance ToJSON Kind where
   toEncoding PreferredDMRelays = toEncoding (10050 :: Int)
   toEncoding CanonicalAuthentication = toEncoding (22242 :: Int)
   toEncoding RelayListMetadata = toEncoding (10002 :: Int)
+  toEncoding Comment = toEncoding (1111 :: Int)
   toEncoding (UnknownKind n) = toEncoding n
 
 
@@ -722,13 +773,13 @@ followListFilter authors = Filter
 
 
 -- | Creates a filter for short text notes.
-shortTextNoteFilter :: [PubKeyXO] -> Int -> Filter
-shortTextNoteFilter authors now = Filter
+shortTextNoteFilter :: [PubKeyXO] -> Filter
+shortTextNoteFilter authors = Filter
   { ids = Nothing
   , authors = Just authors
-  , kinds = Just [ShortTextNote, EventDeletion]
+  , kinds = Just [ShortTextNote, EventDeletion, Repost]
   , since = Nothing
-  , until = Just (now + 60)
+  , until = Nothing
   , limit = Just 500
   , fTags = Nothing
   }
@@ -771,3 +822,82 @@ eventFilter eid = Filter
   , limit = Nothing
   , fTags = Nothing
   }
+
+-- Add parser for QTag
+parseQTag :: [Value] -> Value -> Parser Tag
+parseQTag rest _ = case rest of
+    [eventIdVal, relayVal, pubkeyVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      relay <- parseMaybeRelayURI relayVal
+      pubkey <- case parseEither parseJSON pubkeyVal of
+                  Right pk -> return (Just pk)
+                  Left _ -> return Nothing
+      return $ QTag eventId relay pubkey
+    [eventIdVal, relayVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      relay <- parseMaybeRelayURI relayVal
+      return $ QTag eventId relay Nothing
+    [eventIdVal] -> do
+      eventId <- parseJSONSafe eventIdVal
+      return $ QTag eventId Nothing Nothing
+    _ -> fail "Invalid QTag format"
+
+-- Add parser for KTag
+parseKTag :: [Value] -> Value -> Parser Tag
+parseKTag rest _ = case rest of
+    [String kind] -> return $ KTag kind
+    _ -> fail "Invalid KTag format"
+
+
+-- Add parser for ITag
+parseITag :: [Value] -> Value -> Parser Tag
+parseITag rest _ = case rest of
+    [String identifier, String urlHint] -> do
+      case parseExternalId identifier of
+        Just eid -> return $ ITag eid (Just urlHint)
+        Nothing -> fail $ "Invalid external identifier: " <> T.unpack identifier
+    [String identifier] -> do
+      case parseExternalId identifier of
+        Just eid -> return $ ITag eid Nothing
+        Nothing -> fail $ "Invalid external identifier: " <> T.unpack identifier
+    _ -> fail "Invalid ITag format"
+
+
+-- | Parse an ExternalId from text
+parseExternalId :: Text -> Maybe ExternalId
+parseExternalId t = case T.splitOn ":" t of
+  ["isbn", isbn] -> Just $ IsbnId isbn
+  ["podcast", "guid", guid] -> Just $ PodcastGuidId guid
+  ["podcast", "item", "guid", guid] -> Just $ PodcastItemGuidId guid
+  ["podcast", "publisher", "guid", guid] -> Just $ PodcastPublisherGuidId guid
+  ["isan", isan] -> Just $ IsanId isan
+  ["geo", geohash] -> Just $ GeohashId geohash
+  ["doi", doi] -> Just $ DoiId (T.toLower doi)
+  [tag] | T.head tag == '#' -> Just $ HashtagId (T.toLower tag)
+  _ -> Nothing
+
+
+-- | Convert ExternalId to text
+externalIdToText :: ExternalId -> Text
+externalIdToText = \case
+  UrlId url -> url
+  HashtagId tag -> tag
+  GeohashId hash -> "geo:" <> hash
+  IsbnId isbn -> "isbn:" <> isbn
+  PodcastGuidId guid -> "podcast:guid:" <> guid
+  PodcastItemGuidId guid -> "podcast:item:guid:" <> guid
+  PodcastPublisherGuidId guid -> "podcast:publisher:guid:" <> guid
+  IsanId isan -> "isan:" <> isan
+  DoiId doi -> "doi:" <> doi
+
+-- | FromJSON instance for ExternalId
+instance FromJSON ExternalId where
+  parseJSON = withText "ExternalId" $ \t -> 
+    case parseExternalId t of
+      Just eid -> return eid
+      Nothing -> fail $ "Invalid external identifier: " <> T.unpack t
+
+-- | ToJSON instance for ExternalId
+instance ToJSON ExternalId where
+  toEncoding = text . externalIdToText
+  toJSON = String . externalIdToText

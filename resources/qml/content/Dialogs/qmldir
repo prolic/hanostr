@@ -4,6 +4,7 @@ ImportAccountDialog 1.0 ImportAccountDialog.ui.qml
 ImportSuccessDialog 1.0 ImportSuccessDialog.ui.qml
 ShowKeysDialog 1.0 ShowKeysDialog.ui.qml
 LoginErrorDialog 1.0 LoginErrorDialog.ui.qml
+PostDialog 1.0 PostDialog.ui.qml
 RelayMgmtDialog 1.0 RelayMgmtDialog.ui.qml
 RemoveAccountDialog 1.0 RemoveAccountDialog.ui.qml
 RemoveRelayDialog 1.0 RemoveRelayDialog.ui.qml

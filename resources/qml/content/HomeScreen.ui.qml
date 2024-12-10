@@ -39,7 +39,8 @@ Item {
 
             Row {
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
                 spacing: 10
 
                 FollowList {}
@@ -48,11 +49,6 @@ Item {
                     width: parent.width * 0.4 - (parent.spacing * 2 / 3)
                     height: parent.height
                     color: Material.backgroundColor
-
-                    DMRelays {
-                        anchors.fill: parent
-                        visible: ctxRelayMgmt.dmRelays.length == 0
-                    }
 
                     Loader {
                         id: chatLoader

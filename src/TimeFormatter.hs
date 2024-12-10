@@ -1,4 +1,4 @@
-module TimeFormatter (formatDateTime) where
+module TimeFormatter (Language(..), formatDateTime) where
 
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -16,7 +16,20 @@ formatUTCTime :: String -> UTCTime -> Text
 formatUTCTime format utcTime = T.pack $ formatTime defaultTimeLocale format utcTime
 
 -- Helper function to format time
-formatDateTime :: Language -> Int -> Text
-formatDateTime English = formatUTCTime "%H:%M:%S %Y-%m-%d" . intToUTCTime
-formatDateTime German  = formatUTCTime "%H:%M:%S %d.%m.%Y" . intToUTCTime
-formatDateTime Spanish = formatUTCTime "%H:%M:%S %d/%m/%Y" . intToUTCTime
+formatDateTime :: Language -> Int -> Int -> Text
+formatDateTime lang currentTimestamp messageTimestamp =
+    let secondsInDay = 24 * 60 * 60
+        diffInDays = (currentTimestamp - messageTimestamp) `div` secondsInDay
+        isToday = diffInDays == 0
+    in case lang of
+        English -> if isToday
+            then formatUTCTime "%I:%M %p" (intToUTCTime messageTimestamp)
+            else formatUTCTime "%b %d, %I:%M %p" (intToUTCTime messageTimestamp)
+
+        German -> if isToday
+            then formatUTCTime "%H:%M" (intToUTCTime messageTimestamp)
+            else formatUTCTime "%d.%m., %H:%M" (intToUTCTime messageTimestamp)
+
+        Spanish -> if isToday
+            then formatUTCTime "%H:%M" (intToUTCTime messageTimestamp)
+            else formatUTCTime "%d/%m, %H:%M" (intToUTCTime messageTimestamp)

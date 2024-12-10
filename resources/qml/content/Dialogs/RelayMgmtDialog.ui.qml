@@ -4,9 +4,9 @@ import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 import QtGraphicalEffects 1.15
 
+import Components 1.0
 import Futr 1.0
 import HsQML.Model 1.0
-import "../."
 
 Dialog {
     standardButtons: Dialog.Close
@@ -30,31 +30,32 @@ Dialog {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        ColumnLayout {
+        ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            clip: true
 
-            Text {
-                text: qsTr("Preferred DM Relays")
-                font: Constants.font
-                color: Material.primaryTextColor
-                Layout.alignment: Qt.AlignLeft
-            }
+            ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
             ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                width: relayMgmtDialog.width - 60
+                spacing: 15
+
+                // DM Relays Section
+                Text {
+                    text: qsTr("Preferred DM Relays")
+                    font: Constants.font
+                    color: Material.primaryTextColor
+                }
 
                 ListView {
                     id: dmRelaysListView
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: contentHeight
                     clip: true
-
-                    ScrollBar.vertical: ScrollBar {
-                        policy: ScrollBar.AsNeeded
-                        active: true
-                    }
+                    interactive: false
+                    Layout.rightMargin: 25
 
                     model: AutoListModel {
                         source: ctxRelayMgmt.dmRelays
@@ -115,6 +116,7 @@ Dialog {
                     spacing: 10
                     Layout.fillWidth: true
                     Layout.preferredHeight: addPreferredButton.height
+                    Layout.rightMargin: 25
 
                     Button {
                         id: addPreferredButton
@@ -206,42 +208,29 @@ Dialog {
                         }
                     }
                 }
-            }
-        }
 
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: Material.dividerColor
-            Layout.topMargin: 10
-            Layout.bottomMargin: 10
-        }
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Material.dividerColor
+                    Layout.topMargin: 10
+                    Layout.bottomMargin: 10
+                }
 
-        ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-
-            Text {
-                text: qsTr("Inbox / Outbox Relays")
-                font: Constants.font
-                color: Material.primaryTextColor
-                Layout.alignment: Qt.AlignLeft
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                // General Relays Section
+                Text {
+                    text: qsTr("Inbox / Outbox Relays")
+                    font: Constants.font
+                    color: Material.primaryTextColor
+                }
 
                 ListView {
                     id: inboxRelayListView
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: contentHeight
                     clip: true
-
-                    ScrollBar.vertical: ScrollBar {
-                        policy: ScrollBar.AsNeeded
-                        active: true
-                    }
+                    interactive: false
+                    Layout.rightMargin: 25
 
                     model: AutoListModel {
                         source: ctxRelayMgmt.generalRelays
@@ -314,6 +303,7 @@ Dialog {
                 RowLayout {
                     spacing: 10
                     Layout.fillWidth: true
+                    Layout.rightMargin: 25
 
                     Button {
                         id: addInboxButton
@@ -412,6 +402,65 @@ Dialog {
                                 newRelayInput.text = ""
                                 newRelayInput.visible = false
                             }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Material.dividerColor
+                    Layout.topMargin: 10
+                    Layout.bottomMargin: 10
+                }
+
+                // Temp Relays Section
+                Text {
+                    text: qsTr("Temporary Connected Relays")
+                    font: Constants.font
+                    color: Material.primaryTextColor
+                }
+
+                ListView {
+                    id: tempRelayListView
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: contentHeight
+                    clip: true
+                    interactive: false
+                    Layout.rightMargin: 25
+
+                    model: AutoListModel {
+                        source: ctxRelayMgmt.tempRelays
+                        mode: AutoListModel.ByKey
+                        equalityTest: function (oldItem, newItem) {
+                            return oldItem.url === newItem.url
+                                && oldItem.connectionState === newItem.connectionState
+                                && oldItem.connectionRetries === newItem.connectionRetries
+                                && oldItem.notices === newItem.notices
+                        }
+                    }
+
+                    delegate: RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        width: tempRelayListView.width
+
+                        RelayStatusIcon {
+                            connectionState: modelData.connectionState
+                            connectionRetries: modelData.connectionRetries
+                        }
+
+                        Text {
+                            text: modelData.url
+                            font: Constants.font
+                            color: Material.primaryTextColor
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: qsTr("Disconnect")
+                            Layout.preferredWidth: 100
+                            onClicked: ctxRelayMgmt.disconnectRelay(modelData.url)
                         }
                     }
                 }

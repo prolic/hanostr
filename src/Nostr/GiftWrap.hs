@@ -9,18 +9,18 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH (makeEffect)
-import Data.List (sort)
+import Data.List (sort, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
-import Data.Text (pack)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Time.Format (defaultTimeLocale, formatTime)
+import Data.Ord (comparing)
 
 import Logging
 import Nostr
 import Nostr.Event (validateEvent)
 import Nostr.Keys (KeyPair, PubKeyXO, byteStringToHex, keyPairToPubKeyXO)
 import Nostr.Types (Event(..), EventId(..), Kind(..), Rumor(..), Tag(..))
+import Nostr.Util (Util, getCurrentTime)
+import TimeFormatter (Language(..), formatDateTime)
 import Types (AppState(..),ChatMessage(..))
 
 -- | GiftWrap Effects.
@@ -36,9 +36,10 @@ makeEffect ''GiftWrap
 
 -- | Effectful type for GiftWrap.
 type GiftWrapEff es = ( State AppState :> es
+                      , Nostr :> es
+                      , Util :> es
                       , Logging :> es   
                       , IOE :> es
-                      , Nostr :> es
                       )
 
 
@@ -82,13 +83,16 @@ processDecryptedRumor decryptedRumor sealedEvent originalEvent kp
             then sort $ getAllPTags (rumorTags decryptedRumor)
             else filter (/= keyPairToPubKeyXO kp) $ rumorPubKey decryptedRumor : sort (getAllPTags (rumorTags decryptedRumor))
       let senderPubKey = rumorPubKey decryptedRumor
-      let chatMsg = createChatMessage originalEvent decryptedRumor senderPubKey
-      updateChats chatKey chatMsg
+      ct <- getCurrentTime
+      updateChats chatKey $ createChatMessage originalEvent decryptedRumor senderPubKey ct
 
 
 -- | Update chats.
 updateChats :: State AppState :> es => [PubKeyXO] -> ChatMessage -> Eff es ()
-updateChats chatKey chatMsg = do
+updateChats chatKeys chatMsg = do
+  let chatKey = case chatKeys of
+        (k:_) -> k
+        [] -> error "Empty chat key list"
   modify $ \s -> s { chats = mergeMessageIntoChats chatKey chatMsg (chats s) }
 
 
@@ -101,32 +105,28 @@ getAllPTags = mapMaybe extractPubKey
 
 
 -- | Create a chat message.
-createChatMessage :: Event -> Rumor -> PubKeyXO -> ChatMessage
-createChatMessage originalEvent decryptedRumor senderPubKey =
+createChatMessage :: Event -> Rumor -> PubKeyXO -> Int -> ChatMessage
+createChatMessage originalEvent decryptedRumor senderPubKey currentTimestamp =
   ChatMessage
     { chatMessageId = eventId originalEvent
     , chatMessage = rumorContent decryptedRumor
     , author = senderPubKey
     , chatMessageCreatedAt = rumorCreatedAt decryptedRumor
-    , timestamp = pack $ formatTime defaultTimeLocale "%FT%T%QZ" $ posixSecondsToUTCTime $ fromIntegral $ rumorCreatedAt decryptedRumor
+    , timestamp = formatDateTime English currentTimestamp (rumorCreatedAt decryptedRumor)
     }
 
 
 -- | Merge a new chat message into the existing chat map
-mergeMessageIntoChats :: [PubKeyXO] -> ChatMessage -> Map.Map [PubKeyXO] [ChatMessage] -> Map.Map [PubKeyXO] [ChatMessage]
-mergeMessageIntoChats chatKey chatMsg = Map.alter (addOrUpdateChatThread chatMsg) chatKey
+mergeMessageIntoChats :: PubKeyXO -> ChatMessage -> Map.Map PubKeyXO [ChatMessage] -> Map.Map PubKeyXO [ChatMessage]
+mergeMessageIntoChats chatKey chatMsg = Map.alter (addMessageIfUnique chatMsg) chatKey
 
 
--- | Add a new message to an existing chat thread or create a new thread
-addOrUpdateChatThread :: ChatMessage -> Maybe [ChatMessage] -> Maybe [ChatMessage]
-addOrUpdateChatThread chatMsg = \case
-  Just msgs -> Just $ insertUniqueMessage chatMsg msgs
-  Nothing -> Just [chatMsg]
-
--- | Insert a message into a list, ensuring no duplicates
-insertUniqueMessage :: ChatMessage -> [ChatMessage] -> [ChatMessage]
-insertUniqueMessage newMsg = foldr insertIfUnique [newMsg]
-  where
-    insertIfUnique msg acc
-      | chatMessageId msg == chatMessageId newMsg = acc
-      | otherwise = msg : acc
+-- | Add a message to a chat thread only if it doesn't already exist
+-- Messages are sorted by creation time, newest last
+addMessageIfUnique :: ChatMessage -> Maybe [ChatMessage] -> Maybe [ChatMessage]
+addMessageIfUnique chatMsg = \case
+    Nothing -> Just [chatMsg]
+    Just msgs ->
+        if any (\msg -> chatMessageId msg == chatMessageId chatMsg) msgs
+            then Just msgs
+            else Just $ sortBy (comparing chatMessageCreatedAt) (chatMsg : msgs)

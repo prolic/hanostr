@@ -17,13 +17,13 @@ import Effectful.State.Static.Shared (State, get, modify)
 import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 
-import EffectfulQML (EffectfulQMLState(..))
+import QtQuick (QtQuickState(..), UIReferences(..))
 import Logging
 import Nostr.Keys (keyPairToPubKeyXO)
 import Nostr.RelayPool
 import Nostr.Types hiding (displayName, picture)
 import Nostr.Util
-import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..), UIReferences(..))
+import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
 
 
 data RelayType = DMRelays | InboxRelays | OutboxRelays
@@ -32,7 +32,7 @@ data RelayType = DMRelays | InboxRelays | OutboxRelays
 type RelayMgmgtUIEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
-  , State EffectfulQMLState :> es
+  , State QtQuickState :> es
   , RelayPool :> es
   , Logging :> es
   , Concurrent :> es
@@ -123,10 +123,11 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
 
         dmRelayPool <- newFactoryPool (newObject dmRelayClass)
         generalRelayPool <- newFactoryPool (newObject relayClass)
+        tempRelayPool <- newFactoryPool (newObject relayClass)
 
         contextClass <- newClass [
           defPropertySigRO' "dmRelays" changeKey $ \obj -> do
-            runE $ modify @EffectfulQMLState $ \s -> s { 
+            runE $ modify @QtQuickState $ \s -> s { 
               uiRefs = (uiRefs s) { dmRelaysObjRef = Just obj } 
             }
             appState <- runE $ get @AppState
@@ -138,7 +139,7 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                 mapM (\(relay, _status) -> getPoolObject dmRelayPool (getUri relay)) relaysWithStatus,
 
           defPropertySigRO' "generalRelays" changeKey $ \obj -> do
-            runE $ modify @EffectfulQMLState $ \s -> s { 
+            runE $ modify @QtQuickState $ \s -> s { 
               uiRefs = (uiRefs s) { generalRelaysObjRef = Just obj } 
             }
             appState <- runE $ get @AppState
@@ -151,6 +152,28 @@ runRelayMgmtUI action = interpret handleRelayMgmtUI action
                                 Nothing -> []
                                 Just (rs', _) -> map getUri rs'
                     mapM (getPoolObject generalRelayPool) rs,
+
+          defPropertySigRO' "tempRelays" changeKey $ \obj -> do
+            runE $ modify @QtQuickState $ \s -> s {
+              uiRefs = (uiRefs s) { tempRelaysObjRef = Just obj }
+            }
+            poolState <- runE $ get @RelayPoolState
+            appState <- runE $ get @AppState
+
+            let activeURIs = Map.keys (activeConnections poolState)
+
+            case keyPair appState of
+              Nothing -> return []
+              Just kp -> do
+                let pk = keyPairToPubKeyXO kp
+                (dmRelaysWithStatus, _) <- runE $ getDMRelays pk
+                let dmURIs = map (getUri . fst) dmRelaysWithStatus
+                let generalURIs = case Map.lookup pk (generalRelays poolState) of
+                                  Nothing -> []
+                                  Just (rs, _) -> map getUri rs
+
+                let tempURIs = filter (\uri -> uri `notElem` dmURIs && uri `notElem` generalURIs) activeURIs
+                mapM (getPoolObject tempRelayPool) tempURIs,
 
           defMethod' "addDMRelay" $ \_ input -> runE $ do
             kp <- getKeyPair

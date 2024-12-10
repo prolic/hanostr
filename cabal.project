@@ -4,10 +4,10 @@ tests: True
 
 source-repository-package
   type: git
-  location: https://github.com/prolic/secp256k1-schnorr
-  tag: 10555f6d6cdba34e60799d915ac3e60a01c76d46
+  location: https://github.com/prolic/HsQML
+  tag: e7fe83f9cc535c66c423d5402d3351c774a5bc2c
 
 source-repository-package
   type: git
-  location: https://github.com/prolic/HsQML/
-  tag: e7fe83f9cc535c66c423d5402d3351c774a5bc2c
+  location: https://github.com/lolepezy/lmdb-high-level
+  tag: c1bfd9564b5a894659428281f328df2975d04569

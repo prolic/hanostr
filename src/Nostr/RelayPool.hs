@@ -10,7 +10,7 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get)
 import Effectful.TH
 
-import EffectfulQML
+import QtQuick
 import KeyMgmt (KeyMgmt)
 import Logging
 import Nostr
@@ -24,6 +24,8 @@ import Nostr.Util
 import Types (AppState(..), ConnectionState(..), RelayData(..), RelayPoolState(..))
 import RelayMgmt (RelayMgmt)
 import RelayMgmt qualified as RM
+import Store.Event (EventStore)
+import Store.Profile (ProfileStore)
 
 
 data DisconnectReason = UserInitiated | ConnectionFailure
@@ -59,6 +61,8 @@ makeEffect ''RelayPool
 type RelayPoolEff es =
   ( State AppState :> es
   , State RelayPoolState :> es
+  , EventStore :> es
+  , ProfileStore :> es
   , Nostr :> es
   , RelayConnection :> es
   , Publisher :> es
@@ -66,7 +70,7 @@ type RelayPoolEff es =
   , Subscription :> es
   , KeyMgmt :> es
   , GiftWrap :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , Concurrent :> es
   , Logging :> es
   , Util :> es

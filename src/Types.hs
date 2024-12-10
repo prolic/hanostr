@@ -1,46 +1,18 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Types where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
 import Data.Text (Text)
 import Effectful.Concurrent.STM (TChan, TQueue)
-import Graphics.QML (ObjRef)
-
+import Lmdb.Types (Database, Environment, Mode(..))
+import GHC.Generics (Generic)
 import Nostr.Keys (KeyPair, PubKeyXO)
 import Nostr.Types (Event, EventId, Filter, Profile, Relay, RelayURI, Request, SubscriptionId)
-
-
--- | UI updates
-data UIUpdates = UIUpdates
-  { profilesChanged :: Bool
-  , followsChanged :: Bool
-  , chatsChanged :: Bool
-  , dmRelaysChanged :: Bool
-  , generalRelaysChanged :: Bool
-  , publishStatusChanged :: Bool
-  , noticesChanged :: Bool
-  } deriving (Eq, Show)
-
-
-instance Semigroup UIUpdates where
-  a <> b = UIUpdates
-    { profilesChanged = profilesChanged a || profilesChanged b
-    , followsChanged = followsChanged a || followsChanged b
-    , chatsChanged = chatsChanged a || chatsChanged b
-    , dmRelaysChanged = dmRelaysChanged a || dmRelaysChanged b
-    , generalRelaysChanged = generalRelaysChanged a || generalRelaysChanged b
-    , publishStatusChanged = publishStatusChanged a || publishStatusChanged b
-    , noticesChanged = noticesChanged a || noticesChanged b
-    }
-
-
-instance Monoid UIUpdates where
-  mempty = emptyUpdates
-
-
--- | Empty UI updates.
-emptyUpdates :: UIUpdates
-emptyUpdates = UIUpdates False False False False False False False
 
 
 -- | Status of a publish operation
@@ -136,29 +108,47 @@ data ChatMessage = ChatMessage
   } deriving (Show)
 
 
+-- | Type of post
+data PostType
+  = ShortTextNote
+  | Repost EventId             -- kind 6, references original note
+  | QuoteRepost EventId      -- kind 1 with q tag, includes quoted event and additional content
+  | Comment {
+      rootScope :: EventId,    -- root event being commented on
+      rootKind :: Int,         -- kind of root event
+      parentId :: EventId,     -- immediate parent (same as root for top-level comments)
+      parentKind :: Int        -- kind of parent
+    }
+  deriving (Show, Eq)
+
+
+-- | Simplified note reference that proxies most data through events map
+data Post = Post
+  { postId :: EventId          -- ID of this post
+  , postType :: PostType       -- Type of post and its references
+  , postCreatedAt :: Int       -- Creation timestamp
+  } deriving (Show)
+
+
+-- | Data type to store event with its relay sources
+data EventWithRelays = EventWithRelays
+    { event :: Event
+    , relays :: Set RelayURI
+    } deriving (Show, Generic, ToJSON, FromJSON)
+
+
 -- | Application state.
 data AppState = AppState
   { keyPair :: Maybe KeyPair
-  , currentScreen :: AppScreen
-  -- Relay management
-  , activeConnectionsCount :: Int
-  -- Data storage
-  , events :: Map EventId (Event, [Relay])
-  , chats :: Map [PubKeyXO] [ChatMessage]
-  , profiles :: Map PubKeyXO (Profile, Int)
+  , currentScreen :: AppScreen -- @todo remove maybe?
+  , lmdbEnv :: Maybe (Environment ReadWrite)
+  , eventDb :: Maybe (Database EventId EventWithRelays)
+  , profileDb :: Maybe (Database PubKeyXO (Profile, Int))
+  , posts :: Map PubKeyXO [Post]
+  , chats :: Map PubKeyXO [ChatMessage]
   , follows :: Map PubKeyXO [Follow]
-  -- UI state
-  , currentChatRecipient :: (Maybe [PubKeyXO], Maybe SubscriptionId)
+  , currentContact :: (Maybe PubKeyXO, Maybe SubscriptionId)
   , currentProfile :: Maybe PubKeyXO
-  }
-
--- | UI object references grouped together
-data UIReferences = UIReferences
-  { profileObjRef :: Maybe (ObjRef ())
-  , followsObjRef :: Maybe (ObjRef ())
-  , chatObjRef :: Maybe (ObjRef ())
-  , dmRelaysObjRef :: Maybe (ObjRef ())
-  , generalRelaysObjRef :: Maybe (ObjRef ())
   }
 
 
@@ -175,11 +165,12 @@ initialState :: AppState
 initialState = AppState
   { keyPair = Nothing
   , currentScreen = KeyMgmt
-  , activeConnectionsCount = 0
-  , events = Map.empty
+  , lmdbEnv = Nothing
+  , eventDb = Nothing
+  , profileDb = Nothing
+  , posts = Map.empty
   , chats = Map.empty
-  , profiles = Map.empty
   , follows = Map.empty
-  , currentChatRecipient = (Nothing, Nothing)
+  , currentContact = (Nothing, Nothing)
   , currentProfile = Nothing
   }

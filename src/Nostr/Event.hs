@@ -6,18 +6,18 @@
 module Nostr.Event where
 
 import Crypto.Hash.SHA256 qualified as SHA256
+import Crypto.Random (getRandomBytes)
 import Data.Aeson
 import Data.ByteString.Lazy (fromStrict, toStrict)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
+import System.Random (randomRIO)
 
-
+import Nostr.Bech32 (eventToNevent)
 import Nostr.Keys
 import Nostr.Types
 import Nostr.Encryption (decrypt, getConversationKey, encrypt)
-import Data.Time.Clock.POSIX (getCurrentTime, utcTimeToPOSIXSeconds)
-import Crypto.Random (getRandomBytes)
-import System.Random (randomRIO)
 
 
 -- | Sign an event.
@@ -58,6 +58,100 @@ verifySignature e = schnorrVerify (pubKey e) (getEventId $ eventId e) (sig e)
 -- | Validate both the event ID and signature of an event.
 validateEvent :: Event -> Bool
 validateEvent e = validateEventId e && verifySignature e
+
+
+-- | Create a comment event (NIP-22) for text notes.
+createComment :: Event                  -- ^ Original event being commented on
+              -> Text                   -- ^ Comment content
+              -> Either Tag EventId     -- ^ Root scope (Tag for I-tags, EventId for events)
+              -> Maybe Tag              -- ^ Optional parent item (for replies)
+              -> Maybe RelayURI         -- ^ Optional relay hint
+              -> PubKeyXO              -- ^ Author's public key
+              -> Int                   -- ^ Timestamp
+              -> UnsignedEvent
+createComment originalEvent content' rootScope parentItem relayHint xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = Comment
+    , tags' = buildTags rootScope parentItem relayHint
+    , content' = content'
+    }
+  where
+    buildTags :: Either Tag EventId -> Maybe Tag -> Maybe RelayURI -> [Tag]
+    buildTags root parent relay = 
+      let
+        -- Root scope tags
+        rootTags = case root of
+          Left (ITag val _) -> 
+            [ ITag val relay
+            , KTag (pack $ show $ kind originalEvent)
+            ]
+          Right eid ->
+            [ ETag eid relay Nothing
+            , KTag (pack $ show $ kind originalEvent)
+            ]
+          _ -> error "Invalid root scope tag"
+
+        -- Parent tags (for replies)
+        parentTags = case parent of
+          Just (ETag eid _ mpk) ->
+            [ ETag eid relay mpk
+            , KTag (pack $ show Comment)
+            ]
+          Just (ITag val _) ->
+            [ ITag val relay
+            , KTag (pack $ show $ kind originalEvent)
+            ]
+          Nothing -> case root of
+            Left itag@(ITag _ _) -> [itag, KTag (pack $ show Comment)]
+            Right eid -> [ETag eid relay Nothing, KTag (pack $ show Comment)]
+            _ -> []
+          _ -> error "Invalid parent tag"
+      in
+        rootTags ++ parentTags
+
+
+-- | Create a repost event (kind 6) for text notes.
+createRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
+createRepost event relayUrl xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = Repost
+    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing
+              , PTag (pubKey event) Nothing Nothing
+              ]
+    , content' = decodeUtf8 $ toStrict $ encode event
+    }
+
+
+-- | Create a quote repost event (kind 1 with q tag).
+createQuoteRepost :: Event -> RelayURI -> Text -> PubKeyXO -> Int -> UnsignedEvent
+createQuoteRepost event relayUrl quote xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = ShortTextNote
+    , tags' = [ QTag (eventId event) (Just relayUrl) (Just $ pubKey event)
+              ]
+    , content' = quote <> "\n\nnostr:" <> eventToNevent event (Just relayUrl)
+    }
+
+
+-- | Create a generic repost event (kind 16) for non-text-note events.
+createGenericRepost :: Event -> RelayURI -> PubKeyXO -> Int -> UnsignedEvent
+createGenericRepost event relayUrl xo t =
+  UnsignedEvent
+    { pubKey' = xo
+    , createdAt' = t
+    , kind' = GenericRepost
+    , tags' = [ ETag (eventId event) (Just relayUrl) Nothing
+              , PTag (pubKey event) Nothing Nothing
+              , KTag (pack $ show $ kind event)
+              ]
+    , content' = decodeUtf8 $ toStrict $ encode event
+    }
 
 
 -- | Create a short text note event.

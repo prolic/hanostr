@@ -7,7 +7,7 @@ import Effectful.State.Static.Shared (State, evalState)
 import Graphics.QML qualified as QML
 import System.Environment (setEnv)
 
-import EffectfulQML
+import QtQuick
 import Futr qualified as Futr
 import KeyMgmt (KeyMgmtState(..), initialState, runKeyMgmt)
 import Logging (runLoggingStdout)
@@ -22,7 +22,10 @@ import Presentation.KeyMgmtUI (runKeyMgmtUI)
 import Presentation.RelayMgmtUI (runRelayMgmtUI)
 import RelayMgmt (runRelayMgmt)
 import UI qualified as UI
-import Types
+import Store.Event (runEventStore)
+import Store.Profile (runProfileStore)
+import Types (AppState(..), RelayPoolState(..))
+import Types qualified as Types
 
 -- | Main function for the app.
 main :: IO ()
@@ -43,11 +46,13 @@ main = do
         -- state related
         . withInitialState
         -- app related
-        . evalState initialEffectfulQMLState
-        . runEffectfulQML
+        . evalState initialQtQuickState
+        . runQtQuick
         . runFileSystem
         . runUtil
         -- nostr related
+        . runEventStore
+        . runProfileStore
         . runNostr
         . runKeyMgmt
         . runGiftWrap

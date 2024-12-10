@@ -19,7 +19,7 @@ import Effectful.TH
 import Graphics.QML hiding (fireSignal, runEngineLoop)
 import System.Random.Shuffle (shuffleM)
 
-import EffectfulQML
+import QtQuick
 import KeyMgmt
 import Logging
 import Nostr
@@ -33,7 +33,7 @@ import Nostr.Util
 import Types (AppState(..), RelayPoolState(..), initialRelayPoolState)
 
 -- | Key Management UI Effect.
-type KeyMgmgtUIEff es = (State AppState :> es, State RelayPoolState :> es, Util :> es, Nostr :> es, Publisher :> es, KeyMgmt :> es, RelayPool :> es, Concurrent :> es, State KeyMgmtState :> es, IOE :> es, EffectfulQML :> es, FileSystem :> es, Logging :> es)
+type KeyMgmgtUIEff es = (State AppState :> es, State RelayPoolState :> es, Util :> es, Nostr :> es, Publisher :> es, KeyMgmt :> es, RelayPool :> es, Concurrent :> es, State KeyMgmtState :> es, IOE :> es, QtQuick :> es, FileSystem :> es, Logging :> es)
 
 -- | Key Management Effect for creating QML UI.
 data KeyMgmtUI :: Effect where

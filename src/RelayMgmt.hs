@@ -3,16 +3,13 @@
 module RelayMgmt where
 
 import Control.Monad (forM)
-import Data.List (dropWhileEnd)
 import Data.Map.Strict qualified as Map
-import Data.Text (pack, unpack)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.State.Static.Shared (State, get, gets, modify)
 import Effectful.TH
-import Network.URI (URI(..), parseURI, uriAuthority, uriPort, uriRegName, uriScheme)
 
-import EffectfulQML
+import QtQuick
 import KeyMgmt (AccountId(..), KeyMgmt, updateRelays)
 import Logging
 import Nostr
@@ -52,7 +49,7 @@ type RelayMgmtEff es =
   , Publisher :> es
   , KeyMgmt :> es
   , Logging :> es
-  , EffectfulQML :> es
+  , QtQuick :> es
   , Util :> es
   )
 
@@ -187,25 +184,6 @@ runRelayMgmt = interpret $ \_ -> \case
                     Nothing -> Disconnected
             return (relay, status)
         return (relaysWithStatus, timestamp)
-
-
--- | Normalize a relay URI according to RFC 3986
-normalizeRelayURI :: RelayURI -> RelayURI
-normalizeRelayURI uri = case parseURI (unpack uri) of
-    Just uri' -> pack $ 
-        (if uriScheme uri' == "wss:" then "wss://" else "ws://") ++
-        maybe "" (\auth -> 
-            -- Remove default ports
-            let hostPort = uriRegName auth ++ 
-                    case uriPort auth of
-                        ":80" | uriScheme uri' == "ws:" -> ""
-                        ":443" | uriScheme uri' == "wss:" -> ""
-                        p -> p
-            in hostPort
-        ) (uriAuthority uri') ++
-        -- Remove trailing slash
-        dropWhileEnd (== '/') (uriPath uri' ++ uriQuery uri' ++ uriFragment uri')
-    Nothing -> uri  -- If parsing fails, return original URI
 
 
 -- | Normalize a Relay by normalizing its URI
