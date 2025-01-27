@@ -64,7 +64,7 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder ostree
 
       - name: Download Flatpak Bundle
-        uses: dawidd6/action-download-artifact@v7
+        uses: dawidd6/action-download-artifact@v8
         with:
           name: flatpak-bundle
           path: .
@@ -206,7 +206,7 @@ jobs:
           fi
 
       - name: Download appdata.xml
-        uses: dawidd6/action-download-artifact@v7
+        uses: dawidd6/action-download-artifact@v8
         with:
           name: appdata-xml
           workflow: ${{ github.event.workflow_run.workflow_id }}
